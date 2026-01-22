@@ -1,12 +1,12 @@
+import asyncio
 import time
-from typing import List, Tuple, Any, Dict
+from typing import List, Tuple
 import urllib.parse
 import threading
 import requests
 from bs4 import BeautifulSoup
 from cat.log import log
 from cat import StrayCat
-from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from .context import ScrapyCatContext
 from ..utils.url_utils import normalize_domain
 from ..utils.robots import is_url_allowed_by_robots
@@ -89,7 +89,7 @@ def extract_valid_urls(urls: List[str], page: str, ctx: ScrapyCatContext) -> Lis
     return valid_urls
 
 
-def crawl_page(ctx: ScrapyCatContext, cat: StrayCat, page: str, depth: int) -> List[Tuple[str, int]]:
+async def crawl_page(ctx: ScrapyCatContext, cat: StrayCat, page: str, depth: int) -> List[Tuple[str, int]]:
     """Thread-safe page crawling function - now stores content for later sequential ingestion"""
     with ctx.visited_lock:
         if page in ctx.visited_pages:
@@ -139,7 +139,7 @@ def crawl_page(ctx: ScrapyCatContext, cat: StrayCat, page: str, depth: int) -> L
                     except:
                         pass
                 
-                cat.notifier.send_ws_message(f"Scraped {current_count} pages - {worker_name} scraping: {page}")
+                await cat.notifier.send_ws_message(f"Scraped {current_count} pages - {worker_name} scraping: {page}")
         
         urls: List[str] = [link["href"] for link in soup.select("a[href]")]
         
@@ -187,68 +187,45 @@ def crawl_page(ctx: ScrapyCatContext, cat: StrayCat, page: str, depth: int) -> L
     return new_urls
 
 
-def crawler(ctx: ScrapyCatContext, cat: StrayCat, start_urls: List[str]) -> None:
+async def crawler(ctx: ScrapyCatContext, cat: StrayCat, start_urls: list[str]) -> None:
     """Multi-threaded crawler using ThreadPoolExecutor - supporting multiple starting URLs"""
+    async def throttled_crawl(url: str, depth: int):
+        # Respect max_pages limit before starting
+        if ctx.max_pages != -1 and len(ctx.visited_pages) >= ctx.max_pages:
+            return
+        async with sem:  # Only 'max_workers' can enter this block at once
+            try:
+                # Add a timeout to the specific page crawl
+                new_links = await asyncio.wait_for(
+                    crawl_page(ctx, cat, url, depth),
+                    timeout=ctx.page_timeout,
+                )
+                # Process results and schedule new tasks
+                for next_url, next_depth in new_links:
+                    if (ctx.max_depth == -1 or next_depth <= ctx.max_depth) and next_url not in pending_tasks:
+                        pending_tasks.add(next_url)
+                        tg.create_task(throttled_crawl(next_url, next_depth))
+            except asyncio.TimeoutError:
+                log.warning(f"Timeout crawling {url}")
+                ctx.failed_pages.append(url)
+            except Exception as e:
+                log.error(f"Failed to crawl {url}: {e}")
+                ctx.failed_pages.append(url)
 
-    with ThreadPoolExecutor(max_workers=ctx.max_workers) as executor:
-        # Track submitted futures and their depths
-        future_to_url: Dict[Any, Tuple[str, int]] = {}
-        
-        # Submit all initial URLs
-        for start_url in start_urls:
-            future = executor.submit(crawl_page, ctx, cat, start_url, 0)
-            future_to_url[future] = (start_url, 0)
-        
-        while future_to_url:
-            # Check max_pages limit before processing more futures
-            with ctx.visited_lock:
-                if ctx.max_pages != -1 and len(ctx.visited_pages) >= ctx.max_pages:
-                    log.info(f"Max pages limit reached: {ctx.max_pages} pages")
-                    # Cancel remaining futures
-                    for remaining_future in future_to_url.keys():
-                        remaining_future.cancel()
-                    break
-            
-            # Collect all futures that complete within the timeout window
-            # This allows true parallel processing instead of one-at-a-time
-            completed_in_batch: List[Any] = []
-            
-            # Use wait() instead of as_completed() to efficiently wait for the first batch of results
-            # This avoids creating a new iterator and checking .done() on all futures repeatedly
-            done, not_done = wait(future_to_url.keys(), timeout=ctx.page_timeout, return_when=FIRST_COMPLETED)
-            
-            if done:
-                completed_in_batch = list(done)
-            else:
-                # Timeout occurred - no futures completed
-                # Cancel all remaining futures and exit gracefully
-                log.warning(f"Timeout waiting for {len(future_to_url)} futures - cancelling remaining tasks")
-                for future in list(future_to_url.keys()):
-                    future.cancel()
-                    url, depth = future_to_url.pop(future)
-                    ctx.failed_pages.append(url)
-                    log.warning(f"URL cancelled due to timeout: {url}")
-                break
-            
-            # Process all completed futures in this batch
-            for completed_future in completed_in_batch:
-                if completed_future not in future_to_url:
-                    continue  # Already processed
-                    
-                url, depth = future_to_url.pop(completed_future)
-                try:
-                    new_urls: List[Tuple[str, int]] = completed_future.result()
-                    
-                    # Submit new URLs for crawling (if under limits)
-                    for new_url, new_depth in new_urls:
-                        # Check limits before submitting new tasks
-                        with ctx.visited_lock:
-                            if ctx.max_pages != -1 and len(ctx.visited_pages) >= ctx.max_pages:
-                                break
-                                
-                        if ctx.max_depth == -1 or new_depth <= ctx.max_depth:
-                            future = executor.submit(crawl_page, ctx, cat, new_url, new_depth)
-                            future_to_url[future] = (new_url, new_depth)
-                except Exception as e:
-                    log.error(f"URL processing failed: {url} (depth {depth}) - {str(e)}")
-                    ctx.failed_pages.append(url)
+    # Limit concurrency (replaces max_workers)
+    sem = asyncio.Semaphore(ctx.max_workers)
+
+    # 2. Track pending URLs to prevent duplicate tasks
+    # (Simplified because we don't need locks in a single-threaded event loop)
+    pending_tasks = set()
+    try:
+        async with asyncio.TaskGroup() as tg:
+            for start_url in start_urls:
+                pending_tasks.add(start_url)
+                tg.create_task(throttled_crawl(start_url, 0))
+
+    except ExceptionGroup as eg:
+        # TaskGroup raises ExceptionGroup if multiple tasks fail
+        log.error(f"Crawl finished with errors: {eg}")
+
+    log.info(f"Crawl complete. Visited: {len(ctx.visited_pages)}")

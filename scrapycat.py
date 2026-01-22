@@ -1,4 +1,4 @@
-from cat import hook, StrayCat
+from cat import hook, StrayCat, AgenticWorkflowOutput, run_sync_or_async
 from typing import Dict, List, Any
 from cat.log import log
 import os
@@ -13,9 +13,8 @@ from .integrations.crawl4ai import run_crawl4ai_setup, crawl4i, CRAWL4AI_AVAILAB
 from .core.crawler import crawler
 
 
-def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool = False) -> str:
+async def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool = False) -> str:
     """Process a scrapycat command and return the result message"""
-    
     settings: Dict[str, Any] = cat.mad_hatter.get_plugin().load_settings()
 
     # Parse command arguments
@@ -131,7 +130,7 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
     try:
         # Record start time for the whole crawling+ingestion operation
         start_time = time.time()
-        crawler(ctx, cat, starting_urls)
+        await crawler(ctx, cat, starting_urls)
         
         log.info(f"Crawling completed: {len(ctx.scraped_pages)} pages scraped, {len(ctx.failed_pages)} failed/timed out")
         
@@ -170,7 +169,7 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
                             "session_id": ctx.session_id,
                             "command": ctx.command
                         }
-                        cat.rabbit_hole.ingest_file(cat, file=output_file, metadata=metadata)
+                        await cat.rabbit_hole.ingest_file(cat, file=output_file, metadata=metadata)
                         os.remove(output_file)
                         ingested_count += 1
                     except Exception as crawl4ai_error:
@@ -182,7 +181,7 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
                             "session_id": ctx.session_id,
                             "command": ctx.command
                         }
-                        cat.rabbit_hole.ingest_file(cat, file=scraped_url, metadata=metadata)
+                        await cat.rabbit_hole.ingest_file(cat, file=scraped_url, metadata=metadata)
                         ingested_count += 1
                 else:
                     # Use default ingestion method
@@ -192,12 +191,12 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
                         "session_id": ctx.session_id,
                         "command": ctx.command
                     }
-                    cat.rabbit_hole.ingest_file(cat, file=scraped_url, metadata=metadata)
+                    await cat.rabbit_hole.ingest_file(cat, file=scraped_url, metadata=metadata)
                     ingested_count += 1
                 
                 # Send progress update
                 if not ctx.scheduled:
-                    cat.notifier.send_ws_message(f"Ingested {ingested_count}/{len(ctx.scraped_pages)} pages - Currently processing: {scraped_url}")
+                    await cat.notifier.send_ws_message(f"Ingested {ingested_count}/{len(ctx.scraped_pages)} pages - Currently processing: {scraped_url}")
             except Exception as e:
                 ctx.failed_pages.append(scraped_url)  # Track failed pages in context
                 log.error(f"Page ingestion failed: {scraped_url} - {str(e)}")
@@ -236,27 +235,26 @@ def after_cat_bootstrap(cat):
 
 
 @hook(priority=9)
-def agent_fast_reply(fast_reply: Dict, cat: StrayCat) -> Dict:
-
+def agent_fast_reply(cat: StrayCat) -> AgenticWorkflowOutput | None:
     user_message: str = cat.working_memory.user_message.text
 
     if not user_message.startswith("@scrapycat"):
-        return fast_reply
+        return None
 
     # Check if only scheduled scraping is enabled
     settings: Dict[str, Any] = cat.mad_hatter.get_plugin().load_settings()
     if settings.get("only_scheduled", False):
         # Skip processing and let the chatbot handle it normally
-        return fast_reply
+        return None
 
     # Handle crawl4ai setup command
     if user_message.strip() == "@scrapycat crawl4ai-setup":
         result: str = run_crawl4ai_setup()
-        return {"output": result}
+        return AgenticWorkflowOutput(output=result)
 
     # Process the scrapycat command using the extracted function
-    result = process_scrapycat_command(user_message, cat)
-    return {"output": result}
+    result = run_sync_or_async(process_scrapycat_command, user_message=user_message, cat=cat)
+    return AgenticWorkflowOutput(output=result)
 
 
 # Empty hook placeholders to skip the warning about missing hooks

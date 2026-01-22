@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Dict, Any, List
 from cat.log import log
-from cat import hook, CheshireCat, StrayCat
+from cat import hook, CheshireCat, StrayCat, run_sync_or_async
 from cat.auth.permissions import AuthUserInfo
 
 
@@ -11,7 +11,6 @@ def setup_scrapycat_schedule(cheshire_cat: CheshireCat) -> None:
     def scheduled_scrapycat_job(user_message: str) -> str:
         """Wrapper function for scheduled ScrapyCat execution"""
         from .scrapycat import process_scrapycat_command
-
         # Create a proper StrayCat instance for the scheduled job
         # Use a system user for scheduled operations
         system_user = AuthUserInfo(
@@ -19,7 +18,12 @@ def setup_scrapycat_schedule(cheshire_cat: CheshireCat) -> None:
             name="system"
         )
         stray_cat = StrayCat(cheshire_cat.agent_key, system_user, cheshire_cat.plugin_manager_generator)
-        return process_scrapycat_command(user_message, stray_cat, scheduled=True)
+        return run_sync_or_async(
+            process_scrapycat_command,
+            user_message=user_message,
+            cat=stray_cat,
+            scheduled=True,
+        )
 
     # Load ScrapyCat plugin settings
     settings = cheshire_cat.mad_hatter.get_plugin().load_settings()
