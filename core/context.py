@@ -1,4 +1,4 @@
-from typing import Dict, Set, List, Optional
+from typing import Dict, Set, List
 from threading import Lock
 from urllib.robotparser import RobotFileParser
 import uuid
@@ -16,7 +16,7 @@ class ScrapyCatContext:
         self.allowed_domains: Set[str] = set()  # Set of allowed domains (single page scraping only)
         self.use_crawl4ai: bool = False  # Whether to use crawl4ai for content extraction
         self.follow_robots_txt: bool = False  # Whether to follow robots.txt
-        self.robots_cache: Dict[str, Optional[RobotFileParser]] = {}  # Cache robots.txt parsers by domain
+        self.robots_cache: Dict[str, RobotFileParser | None] = {}  # Cache robots.txt parsers by domain
         self.visited_lock: Lock = Lock()  # Thread-safe access to visited_pages
         self.max_workers: int = 1   # Configurable thread pool size
         self.skip_extensions: List[str] = []  # List of file extensions to skip during crawling

@@ -1,4 +1,3 @@
-from typing import Optional
 import urllib.parse
 from urllib.robotparser import RobotFileParser
 from cat.log import log
@@ -19,7 +18,7 @@ except ImportError:
         return session
 
 
-def load_robots_txt(ctx: ScrapyCatContext, domain: str) -> Optional[RobotFileParser]:
+def load_robots_txt(ctx: ScrapyCatContext, domain: str) -> RobotFileParser | None:
     """
     Load and parse robots.txt for a given domain.
     Returns None if robots.txt is not accessible or parsing fails.
@@ -30,7 +29,7 @@ def load_robots_txt(ctx: ScrapyCatContext, domain: str) -> Optional[RobotFilePar
     
     try:
         # Try both http and https
-        for protocol in ['https', 'http']:
+        for protocol in ["https", "http"]:
             robots_url = f"{protocol}://{domain}/robots.txt"
             try:
                 # Use thread-local session instead of shared session

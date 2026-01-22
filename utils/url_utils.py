@@ -12,7 +12,7 @@ def normalize_url_with_protocol(url: str) -> str:
     Ensure URL has a protocol. If no protocol is specified, prepend https://
     """
     url = url.strip()
-    if not url.startswith(('http://', 'https://')):
+    if not url.startswith(("http://", "https://")):
         return f"https://{url}"
     return url
 
@@ -31,11 +31,11 @@ def normalize_domain(domain_or_url: str) -> str:
     domain = domain_or_url.strip().lower()
     
     # Remove protocol if present
-    if domain.startswith(('http://', 'https://')):
+    if domain.startswith(("http://", "https://")):
         domain = urllib.parse.urlparse(domain).netloc
     
     # Remove www. prefix if present
-    if domain.startswith('www.'):
+    if domain.startswith("www."):
         domain = domain[4:]
     
     return domain
@@ -46,7 +46,7 @@ def validate_url(url: str) -> bool:
     url = url.strip()
     
     # If it doesn't have a protocol, it might be a domain with or without a path
-    if not url.startswith(('http://', 'https://')):
+    if not url.startswith(("http://", "https://")):
         # Check if it's a valid domain format (with optional path)
         domain_regex: re.Pattern = re.compile(
             r"^([a-z0-9-]+\.)+[a-z]{2,}(/[^\s]*)?$", re.IGNORECASE

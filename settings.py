@@ -1,5 +1,5 @@
-from pydantic import BaseModel, Field, validator
-from cat.mad_hatter.decorators import plugin
+from pydantic import BaseModel, Field, field_validator
+from cat import plugin
 
 
 # Plugin settings
@@ -90,32 +90,32 @@ class PluginSettings(BaseModel):
         description="User agent string to use for HTTP requests during crawling"
     )
 
-    @validator('page_timeout')
+    @field_validator("page_timeout")
     def validate_page_timeout(cls, v):
         """Validate that page timeout is reasonable (5-300 seconds)"""
         if not 5 <= v <= 300:
-            raise ValueError('Page timeout must be between 5 and 300 seconds')
+            raise ValueError("Page timeout must be between 5 and 300 seconds")
         return v
 
-    @validator('schedule_hour')
+    @field_validator("schedule_hour")
     def validate_schedule_hour(cls, v):
         """Validate that schedule hour is between 0 and 23"""
         if not 0 <= v <= 23:
-            raise ValueError('Schedule hour must be between 0 and 23')
+            raise ValueError("Schedule hour must be between 0 and 23")
         return v
 
-    @validator('schedule_minute')
+    @field_validator("schedule_minute")
     def validate_schedule_minute(cls, v):
         """Validate that schedule minute is between 0 and 59"""
         if not 0 <= v <= 59:
-            raise ValueError('Schedule minute must be between 0 and 59')
+            raise ValueError("Schedule minute must be between 0 and 59")
         return v
 
-    @validator('scheduled_command')
+    @field_validator("scheduled_command")
     def validate_scheduled_command(cls, v):
         """Validate that scheduled command starts with @scrapycat if not empty"""
-        if v.strip() and not v.strip().startswith('@scrapycat'):
-            raise ValueError('Scheduled command must start with @scrapycat or be empty')
+        if v.strip() and not v.strip().startswith("@scrapycat"):
+            raise ValueError("Scheduled command must start with @scrapycat or be empty")
         return v
 
 

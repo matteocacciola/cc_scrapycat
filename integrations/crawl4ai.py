@@ -1,7 +1,6 @@
 import subprocess
 from cat.log import log
 
-# crawl4ai imports
 try:
     from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
     from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator

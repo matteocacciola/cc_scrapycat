@@ -1,10 +1,10 @@
-from cat.mad_hatter.decorators import hook
+from cat import hook, StrayCat
 from typing import Dict, List, Any
 from cat.log import log
-from cat.looking_glass.stray_cat import StrayCat
 import os
 import asyncio
 import urllib.parse
+import time
 
 from .core.context import ScrapyCatContext
 from .utils.url_utils import clean_url, normalize_url_with_protocol, normalize_domain, validate_url
@@ -86,7 +86,7 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
     # Parse skip extensions from settings and normalize them (ensure they all start with a dot)
     skip_extensions_str = settings.get("skip_extensions", ".jpg,.jpeg,.png,.gif,.bmp,.svg,.webp,.ico,.zip,.ods,.odt,.xls,.p7m,.rar,.mp3,.xml,.7z,.exe,.doc")
     ctx.skip_extensions = [
-        ext.strip() if ext.strip().startswith('.') else f'.{ext.strip()}'
+        ext.strip() if ext.strip().startswith(".") else f".{ext.strip()}"
         for ext in skip_extensions_str.split(",") if ext.strip()
     ]
     # Check if crawl4ai is requested but not available
@@ -121,15 +121,15 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
     # Fire before_scraping hook with serializable context data
     try:
         context_data = ctx.to_hook_context()
-        context_data = cat.mad_hatter.execute_hook("scrapycat_before_scraping", context_data, cat=cat)
+        context_data = cat.mad_hatter.execute_hook("scrapycat_before_scraping", context_data, caller=cat)
         ctx.update_from_hook_context(context_data)
     except Exception as hook_error:
         log.warning(f"Error executing before_scraping hook: {hook_error}")
 
     # Start crawling from all starting URLs
+    response = ""
     try:
         # Record start time for the whole crawling+ingestion operation
-        import time
         start_time = time.time()
         crawler(ctx, cat, starting_urls)
         
@@ -139,7 +139,7 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
         try:
             context_data = ctx.to_hook_context()
             log.debug(f"Firing after_scraping hook with context data: session_id={context_data['session_id']}, command={context_data['command']}")
-            context_data = cat.mad_hatter.execute_hook("scrapycat_after_scraping", context_data, cat=cat)
+            context_data = cat.mad_hatter.execute_hook("scrapycat_after_scraping", context_data, caller=cat)
             ctx.update_from_hook_context(context_data)
         except Exception as hook_error:
             log.warning(f"Error executing after_scraping hook: {hook_error}")
@@ -170,7 +170,7 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
                             "session_id": ctx.session_id,
                             "command": ctx.command
                         }
-                        cat.rabbit_hole.ingest_file(cat, output_file, ctx.chunk_size, ctx.chunk_overlap, metadata)
+                        cat.rabbit_hole.ingest_file(cat, file=output_file, metadata=metadata)
                         os.remove(output_file)
                         ingested_count += 1
                     except Exception as crawl4ai_error:
@@ -182,7 +182,7 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
                             "session_id": ctx.session_id,
                             "command": ctx.command
                         }
-                        cat.rabbit_hole.ingest_file(cat, scraped_url, ctx.chunk_size, ctx.chunk_overlap, metadata)
+                        cat.rabbit_hole.ingest_file(cat, file=scraped_url, metadata=metadata)
                         ingested_count += 1
                 else:
                     # Use default ingestion method
@@ -192,13 +192,12 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
                         "session_id": ctx.session_id,
                         "command": ctx.command
                     }
-                    cat.rabbit_hole.ingest_file(cat, scraped_url, ctx.chunk_size, ctx.chunk_overlap, metadata)
+                    cat.rabbit_hole.ingest_file(cat, file=scraped_url, metadata=metadata)
                     ingested_count += 1
                 
                 # Send progress update
                 if not ctx.scheduled:
-                    cat.send_ws_message(f"Ingested {ingested_count}/{len(ctx.scraped_pages)} pages - Currently processing: {scraped_url}")
-                
+                    cat.notifier.send_ws_message(f"Ingested {ingested_count}/{len(ctx.scraped_pages)} pages - Currently processing: {scraped_url}")
             except Exception as e:
                 ctx.failed_pages.append(scraped_url)  # Track failed pages in context
                 log.error(f"Page ingestion failed: {scraped_url} - {str(e)}")
@@ -210,11 +209,9 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
         minutes = round(elapsed_seconds / 60.0, 2)
         
         # Build response message
+        response: str = f"{ingested_count} URLs successfully imported in {minutes} minutes"
         if ctx.failed_pages:
             response: str = f"{ingested_count} URLs successfully imported, {len(ctx.failed_pages)} failed or timed out in {minutes} minutes"
-        else:
-            response: str = f"{ingested_count} URLs successfully imported in {minutes} minutes"
-
     except Exception as e:
         error_msg = str(e)
         log.error(f"ScrapyCat operation failed: {error_msg}")
@@ -224,7 +221,7 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
         try:
             context_data = ctx.to_hook_context()
             log.debug(f"Firing after_ingestion hook with context data: session_id={context_data['session_id']}, command={context_data['command']}")
-            cat.mad_hatter.execute_hook("scrapycat_after_ingestion", context_data, cat=cat)
+            cat.mad_hatter.execute_hook("scrapycat_after_ingestion", context_data, caller=cat)
             ctx.update_from_hook_context(context_data)
         except Exception as hook_error:
             log.warning(f"Error executing after_ingestion hook: {hook_error}")
@@ -234,14 +231,14 @@ def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool 
 @hook
 def after_cat_bootstrap(cat):
     settings = cat.mad_hatter.get_plugin().load_settings()
-    if settings.get('use_crawl4ai', False):
+    if settings.get("use_crawl4ai", False):
         run_crawl4ai_setup()
 
 
 @hook(priority=9)
 def agent_fast_reply(fast_reply: Dict, cat: StrayCat) -> Dict:
 
-    user_message: str = cat.working_memory.user_message_json.text
+    user_message: str = cat.working_memory.user_message.text
 
     if not user_message.startswith("@scrapycat"):
         return fast_reply

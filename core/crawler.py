@@ -5,7 +5,7 @@ import threading
 import requests
 from bs4 import BeautifulSoup
 from cat.log import log
-from cat.looking_glass.stray_cat import StrayCat
+from cat import StrayCat
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from .context import ScrapyCatContext
 from ..utils.url_utils import normalize_domain
@@ -18,7 +18,7 @@ _thread_local = threading.local()
 
 def get_thread_session(user_agent: str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.12; rv:55.0) Gecko/20100101 Firefox/55.0") -> requests.Session:
     """Get or create a thread-local requests session for thread-safe parallel requests"""
-    if not hasattr(_thread_local, 'session'):
+    if not hasattr(_thread_local, "session"):
         _thread_local.session = requests.Session()
         _thread_local.session.headers.update({
             "User-Agent": user_agent
@@ -139,7 +139,7 @@ def crawl_page(ctx: ScrapyCatContext, cat: StrayCat, page: str, depth: int) -> L
                     except:
                         pass
                 
-                cat.send_ws_message(f"Scraped {current_count} pages - {worker_name} scraping: {page}")
+                cat.notifier.send_ws_message(f"Scraped {current_count} pages - {worker_name} scraping: {page}")
         
         urls: List[str] = [link["href"] for link in soup.select("a[href]")]
         
@@ -236,7 +236,6 @@ def crawler(ctx: ScrapyCatContext, cat: StrayCat, start_urls: List[str]) -> None
                     continue  # Already processed
                     
                 url, depth = future_to_url.pop(completed_future)
-                
                 try:
                     new_urls: List[Tuple[str, int]] = completed_future.result()
                     
@@ -247,10 +246,9 @@ def crawler(ctx: ScrapyCatContext, cat: StrayCat, start_urls: List[str]) -> None
                             if ctx.max_pages != -1 and len(ctx.visited_pages) >= ctx.max_pages:
                                 break
                                 
-                        if (ctx.max_depth == -1 or new_depth <= ctx.max_depth):
+                        if ctx.max_depth == -1 or new_depth <= ctx.max_depth:
                             future = executor.submit(crawl_page, ctx, cat, new_url, new_depth)
                             future_to_url[future] = (new_url, new_depth)
-                            
                 except Exception as e:
                     log.error(f"URL processing failed: {url} (depth {depth}) - {str(e)}")
                     ctx.failed_pages.append(url)
