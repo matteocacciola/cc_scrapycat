@@ -1,4 +1,4 @@
-from cat import hook, StrayCat, AgenticWorkflowOutput, run_sync_or_async
+from cat import hook, StrayCat, AgenticWorkflowOutput
 from typing import Dict, List, Any
 from cat.log import log
 import os
@@ -235,7 +235,7 @@ def after_cat_bootstrap(cat):
 
 
 @hook(priority=9)
-def agent_fast_reply(cat: StrayCat) -> AgenticWorkflowOutput | None:
+async def agent_fast_reply(cat: StrayCat) -> AgenticWorkflowOutput | None:
     user_message: str = cat.working_memory.user_message.text
 
     if not user_message.startswith("@scrapycat"):
@@ -253,7 +253,7 @@ def agent_fast_reply(cat: StrayCat) -> AgenticWorkflowOutput | None:
         return AgenticWorkflowOutput(output=result)
 
     # Process the scrapycat command using the extracted function
-    result = run_sync_or_async(process_scrapycat_command, user_message=user_message, cat=cat)
+    result = await process_scrapycat_command(user_message=user_message, cat=cat)
     return AgenticWorkflowOutput(output=result)
 
 
