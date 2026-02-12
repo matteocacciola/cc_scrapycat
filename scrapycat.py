@@ -1,3 +1,4 @@
+import tempfile
 from cat import hook, StrayCat, AgenticWorkflowOutput
 from typing import Dict, List, Any
 from cat.log import log
@@ -160,9 +161,9 @@ async def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled:
                     # Use crawl4ai for content extraction
                     try:
                         markdown_content: str = asyncio.run(crawl4i(scraped_url))
-                        output_file: str = "temp_crawl4ai_content.md"
-                        with open(output_file, "w", encoding="utf-8") as f:
+                        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".md", delete=False) as f:
                             f.write(markdown_content)
+                            output_file = f.name
                         metadata: Dict[str, str] = {
                             "url": scraped_url, 
                             "source": scraped_url,

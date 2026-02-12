@@ -8,5 +8,4 @@
   "tags": "plugins, prompt, scraping, crawling",
   "version": "2.1.2",
   "dependencies": ["white_rabbit"]
-
 }

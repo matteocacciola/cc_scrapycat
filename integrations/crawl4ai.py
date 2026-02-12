@@ -49,15 +49,15 @@ async def crawl4i(url: str) -> str:
             config.markdown_generator = md_generator
             result = await mdcrawler.arun(url, config=config)
             return result.markdown
-    else:
-        pdf_crawler_strategy = PDFCrawlerStrategy()
-        async with AsyncWebCrawler(crawler_strategy=pdf_crawler_strategy) as pdfcrawler:
-            pdf_scraping_strategy = PDFContentScrapingStrategy()
-            run_config = CrawlerRunConfig(scraping_strategy=pdf_scraping_strategy)
-            result = await pdfcrawler.arun(url=url, config=run_config)
-            if result.markdown and hasattr(result.markdown, "raw_markdown"):
-                return result.markdown.raw_markdown
-            return ""
+
+    pdf_crawler_strategy = PDFCrawlerStrategy()
+    async with AsyncWebCrawler(crawler_strategy=pdf_crawler_strategy) as pdfcrawler:
+        pdf_scraping_strategy = PDFContentScrapingStrategy()
+        run_config = CrawlerRunConfig(scraping_strategy=pdf_scraping_strategy)
+        result = await pdfcrawler.arun(url=url, config=run_config)
+        if result.markdown and hasattr(result.markdown, "raw_markdown"):
+            return result.markdown.raw_markdown
+        return ""
 
 
 async def crawl4ai_get_html(url: str, wait_time: int = 0) -> str:
@@ -90,7 +90,6 @@ async def crawl4ai_get_html(url: str, wait_time: int = 0) -> str:
                 raise Exception(f"Crawl4AI failed: {error_msg}")
                 
             return result.html
-            
     except Exception as e:
         # Catch specific navigation errors or others
         error_str = str(e)
@@ -100,8 +99,9 @@ async def crawl4ai_get_html(url: str, wait_time: int = 0) -> str:
             # log.info(f"Crawl4AI detected download link, skipping HTML extraction: {url}")
             return ""
             
-        if "ACS-GOTO" in error_str:
-            log.warning(f"Crawl4AI navigation error for {url}: {error_str}")
-        else:
-            log.warning(f"Crawl4AI error for {url}: {error_str}")
+        log.warning(
+            f"Crawl4AI navigation error for {url}: {error_str}"
+            if "ACS-GOTO" in error_str
+            else f"Crawl4AI error for {url}: {error_str}"
+        )
         raise e
