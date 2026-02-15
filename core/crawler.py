@@ -1,12 +1,15 @@
 import asyncio
+import subprocess
 import time
-from typing import List, Tuple
+from pathlib import Path
+from typing import List, Tuple, Dict
 import urllib.parse
 import threading
 import requests
 from bs4 import BeautifulSoup
 from cat.log import log
 from cat import StrayCat
+
 from .context import ScrapyCatContext
 from ..utils.url_utils import normalize_domain
 from ..utils.robots import is_url_allowed_by_robots
@@ -229,3 +232,41 @@ async def crawler(ctx: ScrapyCatContext, cat: StrayCat, start_urls: list[str]) -
         log.error(f"Crawl finished with errors: {eg}")
 
     log.info(f"Crawl complete. Visited: {len(ctx.visited_pages)}")
+
+
+def crawl4ai_setup_command(settings: Dict, cat: StrayCat | None = None) -> None:
+    # Check if crawl4ai is enabled in settings
+    if not settings.get("use_crawl4ai", False):
+        return
+
+    # Check if crawl4ai was already setup
+    filepath = Path(".crawl4ai")
+    if filepath.exists():
+        return
+
+    if cat:
+        cat.notifier.send_ws_message("Running crawl4ai setup...")
+
+    # Setup crawl4ai dependencies and configuration
+    try:
+        # Runs the setup command just like in the shell
+        subprocess.run(["uv", "run", "crawl4ai-setup"], check=True)
+        subprocess.run(["uv", "run", "playwright", "install"], check=True)
+        subprocess.run(["uv", "run", "playwright", "install-deps"], check=True)
+
+        message = "Crawl4AI setup completed successfully."
+        if cat:
+            cat.notifier.send_ws_message(message)
+        log.info(message)
+
+        Path.write_text(filepath, "")  # Create an empty .crawl4ai file to indicate setup is done
+    except subprocess.CalledProcessError as e:
+        message = f"Error during Crawl4AI setup: {e}"
+        if cat:
+            cat.notifier.send_error(message)
+        log.error(message)
+    except FileNotFoundError:
+        message = "crawl4ai-setup or playwright command not found. Make sure crawl4ai is installed."
+        if cat:
+            cat.notifier.send_error(message)
+        log.error(message)
