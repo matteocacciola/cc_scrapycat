@@ -6,10 +6,10 @@ from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 from crawl4ai.processors.pdf import PDFCrawlerStrategy, PDFContentScrapingStrategy
 from typing import Dict, List, Any
 import os
-import asyncio
 import urllib.parse
 import time
 
+from cat.services.memory.models import VectorMemoryType
 from .context import ScrapyCatContext
 from .crawler import crawler
 from ..utils.url_utils import clean_url, normalize_url_with_protocol, normalize_domain, validate_url
@@ -200,6 +200,17 @@ async def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled:
 
         ingested_count: int = 0
         for i, scraped_url in enumerate(ctx.scraped_pages):
+            metadata: Dict[str, str] = {
+                "url": scraped_url,
+                "source": scraped_url,
+                "session_id": ctx.session_id,
+                "command": ctx.command
+            }
+            await cat.vector_memory_handler.delete_tenant_points(
+                str(VectorMemoryType.PROCEDURAL),
+                metadata={k: v for k, v in metadata.items() if v == scraped_url},
+            )
+
             try:
                 if ctx.use_crawl4ai:
                     # Use crawl4ai for content extraction
@@ -208,37 +219,19 @@ async def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled:
                         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".md", delete=False) as f:
                             f.write(markdown_content)
                             output_file = f.name
-                        metadata: Dict[str, str] = {
-                            "url": scraped_url,
-                            "source": scraped_url,
-                            "session_id": ctx.session_id,
-                            "command": ctx.command
-                        }
+
                         await cat.rabbit_hole.ingest_file(cat, file=output_file, metadata=metadata)
                         os.remove(output_file)
-                        ingested_count += 1
                     except Exception as crawl4ai_error:
                         log.warning(
                             f"crawl4ai failed for {scraped_url}, falling back to default method: {str(crawl4ai_error)}")
                         # Fallback to the default method
-                        metadata: Dict[str, str] = {
-                            "url": scraped_url,
-                            "source": scraped_url,
-                            "session_id": ctx.session_id,
-                            "command": ctx.command
-                        }
                         await cat.rabbit_hole.ingest_file(cat, file=scraped_url, metadata=metadata)
-                        ingested_count += 1
                 else:
                     # Use default ingestion method
-                    metadata: Dict[str, str] = {
-                        "url": scraped_url,
-                        "source": scraped_url,
-                        "session_id": ctx.session_id,
-                        "command": ctx.command
-                    }
                     await cat.rabbit_hole.ingest_file(cat, file=scraped_url, metadata=metadata)
-                    ingested_count += 1
+
+                ingested_count += 1
 
                 # Send progress update
                 if not ctx.scheduled:

@@ -2,6 +2,7 @@ from typing import Dict, Any
 from cat.log import log
 from cat import hook, CheshireCat, StrayCat, run_sync_or_async
 from cat.auth.permissions import AuthUserInfo
+from cat.core_plugins.white_rabbit.white_rabbit import WhiteRabbit
 
 from .core.crawler import crawl4ai_setup_command
 from .core.processor import process_scrapycat_command
@@ -12,7 +13,7 @@ def setup_scrapycat_schedule(cheshire_cat: CheshireCat) -> None:
     # Create wrapper function for scheduled execution
     def scheduled_scrapycat_job(user_message: str) -> str:
         """Wrapper function for scheduled ScrapyCat execution"""
-        lock_acquired = cheshire_cat.white_rabbit.acquire_lock(job_id)
+        lock_acquired = white_rabbit.acquire_lock(job_id)
         if not lock_acquired:
             return "Skip execution"  # Skip execution if the lock is not acquired (previous job still running)
         try:
@@ -27,12 +28,14 @@ def setup_scrapycat_schedule(cheshire_cat: CheshireCat) -> None:
             )
         finally:
             # release the lock immediately
-            cheshire_cat.white_rabbit.release_lock(job_id)
+            white_rabbit.release_lock(job_id)
 
     # Load ScrapyCat plugin settings
     settings = cheshire_cat.mad_hatter.get_plugin().load_settings()
     # Job ID for the scheduled task
     job_id = f"scrapycat_scheduled_scraping:{cheshire_cat.agent_key}"
+
+    white_rabbit = WhiteRabbit()
 
     try:
         scheduled_command: str = settings.get("scheduled_command", "").strip()
@@ -45,12 +48,12 @@ def setup_scrapycat_schedule(cheshire_cat: CheshireCat) -> None:
             return
 
         # Check if the job is already scheduled
-        if cheshire_cat.white_rabbit.get_job(job_id):
+        if white_rabbit.get_job(job_id):
             log.debug(f"Job '{job_id}' already scheduled for CheshireCat '{cheshire_cat.agent_key}'")
             return
 
         # Schedule the new job: call the wrapper function
-        cheshire_cat.white_rabbit.schedule_cron_job(
+        white_rabbit.schedule_cron_job(
             job=scheduled_scrapycat_job,
             job_id=job_id,
             hour=schedule_hour,
