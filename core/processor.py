@@ -204,7 +204,7 @@ async def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled:
                 if ctx.use_crawl4ai:
                     # Use crawl4ai for content extraction
                     try:
-                        markdown_content: str = asyncio.run(_crawl4i(scraped_url))
+                        markdown_content: str = await _crawl4i(scraped_url)
                         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".md", delete=False) as f:
                             f.write(markdown_content)
                             output_file = f.name
