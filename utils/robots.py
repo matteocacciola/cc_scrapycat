@@ -1,21 +1,25 @@
+import threading
 import urllib.parse
 from urllib.robotparser import RobotFileParser
+import requests
 from cat.log import log
+
 from ..core.context import ScrapyCatContext
 from .url_utils import normalize_domain
 
-# Import thread-local session getter
-try:
-    from ..core.crawler import get_thread_session
-except ImportError:
-    # Fallback if import fails
-    import requests
-    def get_thread_session(user_agent: str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.12; rv:55.0) Gecko/20100101 Firefox/55.0"):
-        session = requests.Session()
-        session.headers.update({
+
+# Thread-local storage for session objects
+_thread_local = threading.local()
+
+
+def get_thread_session(user_agent: str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.12; rv:55.0) Gecko/20100101 Firefox/55.0") -> requests.Session:
+    """Get or create a thread-local requests session for thread-safe parallel requests"""
+    if not hasattr(_thread_local, "session"):
+        _thread_local.session = requests.Session()
+        _thread_local.session.headers.update({
             "User-Agent": user_agent
         })
-        return session
+    return _thread_local.session
 
 
 def load_robots_txt(ctx: ScrapyCatContext, domain: str) -> RobotFileParser | None:

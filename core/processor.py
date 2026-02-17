@@ -1,6 +1,8 @@
 import tempfile
 from cat import StrayCat
 from cat.log import log
+from cat.services.memory.models import VectorMemoryType
+from cat.services.mixin import BotMixin
 from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
 from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 from crawl4ai.processors.pdf import PDFCrawlerStrategy, PDFContentScrapingStrategy
@@ -9,7 +11,6 @@ import os
 import urllib.parse
 import time
 
-from cat.services.memory.models import VectorMemoryType
 from .context import ScrapyCatContext
 from .crawler import crawler
 from ..utils.url_utils import clean_url, normalize_url_with_protocol, normalize_domain, validate_url
@@ -43,7 +44,18 @@ async def _crawl4i(url: str) -> str:
         return ""
 
 
-async def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled: bool = False) -> str:
+async def _remove_old_vectors(metadata: Dict[str, Any], scraped_url: str, cat: BotMixin):
+    metadata_to_find = {k: v for k, v in metadata.items() if v == scraped_url}
+    collection_name = str(VectorMemoryType.PROCEDURAL)
+    if isinstance(cat, StrayCat):
+        metadata_to_find["chat_id"] = cat.id
+        collection_name = str(VectorMemoryType.EPISODIC)
+
+    await cat.vector_memory_handler.delete_tenant_points(collection_name, metadata=metadata_to_find,
+    )
+
+
+async def process_scrapycat_command(user_message: str, cat: BotMixin, scheduled: bool = False) -> str:
     """Process a scrapycat command and return the result message"""
     settings: Dict[str, Any] = cat.mad_hatter.get_plugin().load_settings()
 
@@ -206,11 +218,7 @@ async def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled:
                 "session_id": ctx.session_id,
                 "command": ctx.command
             }
-            await cat.vector_memory_handler.delete_tenant_points(
-                str(VectorMemoryType.PROCEDURAL),
-                metadata={k: v for k, v in metadata.items() if v == scraped_url},
-            )
-
+            await _remove_old_vectors(metadata, scraped_url, cat)
             try:
                 if ctx.use_crawl4ai:
                     # Use crawl4ai for content extraction
@@ -234,7 +242,7 @@ async def process_scrapycat_command(user_message: str, cat: StrayCat, scheduled:
                 ingested_count += 1
 
                 # Send progress update
-                if not ctx.scheduled:
+                if not ctx.scheduled and isinstance(cat, StrayCat):
                     await cat.notifier.send_ws_message(
                         f"Ingested {ingested_count}/{len(ctx.scraped_pages)} pages - Currently processing: {scraped_url}"
                     )

@@ -5,31 +5,17 @@ from pathlib import Path
 from typing import List, Tuple, Dict
 import urllib.parse
 import threading
-import requests
 from bs4 import BeautifulSoup
-from cat.log import log
 from cat import StrayCat
+from cat.log import log
+from cat.services.mixin import BotMixin
 
 from .context import ScrapyCatContext
 from ..utils.url_utils import normalize_domain
-from ..utils.robots import is_url_allowed_by_robots
+from ..utils.robots import is_url_allowed_by_robots, get_thread_session
 
 
-# Thread-local storage for session objects
-_thread_local = threading.local()
-
-
-def get_thread_session(user_agent: str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.12; rv:55.0) Gecko/20100101 Firefox/55.0") -> requests.Session:
-    """Get or create a thread-local requests session for thread-safe parallel requests"""
-    if not hasattr(_thread_local, "session"):
-        _thread_local.session = requests.Session()
-        _thread_local.session.headers.update({
-            "User-Agent": user_agent
-        })
-    return _thread_local.session
-
-
-def extract_valid_urls(urls: List[str], page: str, ctx: ScrapyCatContext) -> List[str]:
+def _extract_valid_urls(urls: List[str], page: str, ctx: ScrapyCatContext) -> List[str]:
     """Extract and filter valid URLs from a list of raw URLs"""
     valid_urls: List[str] = []
     for url in urls:
@@ -92,7 +78,7 @@ def extract_valid_urls(urls: List[str], page: str, ctx: ScrapyCatContext) -> Lis
     return valid_urls
 
 
-async def crawl_page(ctx: ScrapyCatContext, cat: StrayCat, page: str, depth: int) -> List[Tuple[str, int]]:
+async def _crawl_page(ctx: ScrapyCatContext, cat: BotMixin, page: str, depth: int) -> List[Tuple[str, int]]:
     """Thread-safe page crawling function - now stores content for later sequential ingestion"""
     with ctx.visited_lock:
         if page in ctx.visited_pages:
@@ -141,13 +127,14 @@ async def crawl_page(ctx: ScrapyCatContext, cat: StrayCat, page: str, depth: int
                             worker_name = f"Worker {parts[-1]}"
                     except:
                         pass
-                
-                await cat.notifier.send_ws_message(f"Scraped {current_count} pages - {worker_name} scraping: {page}")
+
+                if isinstance(cat, StrayCat):
+                    await cat.notifier.send_ws_message(f"Scraped {current_count} pages - {worker_name} scraping: {page}")
         
         urls: List[str] = [link["href"] for link in soup.select("a[href]")]
         
         # Extract valid URLs using the helper function
-        valid_urls: List[str] = extract_valid_urls(urls, page, ctx)
+        valid_urls: List[str] = _extract_valid_urls(urls, page, ctx)
 
         # Process found URLs: scrape allowed domains immediately, queue root domains for recursion
         recursive_urls: List[str] = []
@@ -190,7 +177,7 @@ async def crawl_page(ctx: ScrapyCatContext, cat: StrayCat, page: str, depth: int
     return new_urls
 
 
-async def crawler(ctx: ScrapyCatContext, cat: StrayCat, start_urls: list[str]) -> None:
+async def crawler(ctx: ScrapyCatContext, cat: BotMixin, start_urls: list[str]) -> None:
     """Multi-threaded crawler using ThreadPoolExecutor - supporting multiple starting URLs"""
     async def throttled_crawl(url: str, depth: int):
         # Respect max_pages limit before starting
@@ -200,7 +187,7 @@ async def crawler(ctx: ScrapyCatContext, cat: StrayCat, start_urls: list[str]) -
             try:
                 # Add a timeout to the specific page crawl
                 new_links = await asyncio.wait_for(
-                    crawl_page(ctx, cat, url, depth),
+                    _crawl_page(ctx, cat, url, depth),
                     timeout=ctx.page_timeout,
                 )
                 # Process results and schedule new tasks
@@ -234,7 +221,9 @@ async def crawler(ctx: ScrapyCatContext, cat: StrayCat, start_urls: list[str]) -
     log.info(f"Crawl complete. Visited: {len(ctx.visited_pages)}")
 
 
-def crawl4ai_setup_command(settings: Dict, cat: StrayCat | None = None) -> None:
+def crawl4ai_setup_command(settings: Dict, cat: BotMixin | None = None) -> None:
+    can_notify = cat and isinstance(cat, StrayCat)
+
     # Check if crawl4ai is enabled in settings
     if not settings.get("use_crawl4ai", False):
         return
@@ -244,7 +233,7 @@ def crawl4ai_setup_command(settings: Dict, cat: StrayCat | None = None) -> None:
     if filepath.exists():
         return
 
-    if cat:
+    if can_notify:
         cat.notifier.send_ws_message("Running crawl4ai setup...")
 
     # Setup crawl4ai dependencies and configuration
@@ -255,18 +244,18 @@ def crawl4ai_setup_command(settings: Dict, cat: StrayCat | None = None) -> None:
         subprocess.run(["uv", "run", "playwright", "install-deps"], check=True)
 
         message = "Crawl4AI setup completed successfully."
-        if cat:
+        if can_notify:
             cat.notifier.send_ws_message(message)
         log.info(message)
 
         Path.write_text(filepath, "")  # Create an empty .crawl4ai file to indicate setup is done
     except subprocess.CalledProcessError as e:
         message = f"Error during Crawl4AI setup: {e}"
-        if cat:
+        if can_notify:
             cat.notifier.send_error(message)
         log.error(message)
     except FileNotFoundError:
         message = "crawl4ai-setup or playwright command not found. Make sure crawl4ai is installed."
-        if cat:
+        if can_notify:
             cat.notifier.send_error(message)
         log.error(message)

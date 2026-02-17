@@ -1,7 +1,6 @@
 from typing import Dict, Any
 from cat.log import log
-from cat import hook, CheshireCat, StrayCat, run_sync_or_async
-from cat.auth.permissions import AuthUserInfo
+from cat import hook, CheshireCat, run_sync_or_async
 from cat.core_plugins.white_rabbit.white_rabbit import WhiteRabbit
 
 from .core.crawler import crawl4ai_setup_command
@@ -17,13 +16,10 @@ def setup_scrapycat_schedule(cheshire_cat: CheshireCat) -> None:
         if not lock_acquired:
             return "Skip execution"  # Skip execution if the lock is not acquired (previous job still running)
         try:
-            # Create a proper StrayCat instance for the scheduled job
-            # Use a system user for scheduled operations
-            system_user = AuthUserInfo(id="system", name="system")
             return run_sync_or_async(
                 process_scrapycat_command,
                 user_message=user_message,
-                cat=StrayCat(cheshire_cat.agent_key, system_user, cheshire_cat.plugin_manager_generator),
+                cat=cheshire_cat,
                 scheduled=True,
             )
         finally:
