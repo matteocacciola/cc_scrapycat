@@ -1,13 +1,17 @@
 from typing import Dict, Any
 from cat.log import log
 from cat import hook, CheshireCat, run_sync_or_async
-from cat.core_plugins.white_rabbit.white_rabbit import WhiteRabbit
+from cat.core_plugins.white_rabbit.white_rabbit import WhiteRabbit, JobStatus
 
 from .core.crawler import crawl4ai_setup_command
 from .core.processor import process_scrapycat_command
 
 
-def setup_scrapycat_schedule(cheshire_cat: CheshireCat) -> None:
+def _get_job_id(cat: CheshireCat) -> str:
+    return f"scrapycat_scheduled_scraping:{cat.agent_key}"
+
+
+def setup_scrapycat_schedule(cheshire_cat: CheshireCat, job_id: str) -> None:
     """Setup or update the ScrapyCat scheduled job based on settings"""
     # Create wrapper function for scheduled execution
     def scheduled_scrapycat_job(user_message: str) -> str:
@@ -28,10 +32,6 @@ def setup_scrapycat_schedule(cheshire_cat: CheshireCat) -> None:
 
     # Load ScrapyCat plugin settings
     settings = cheshire_cat.mad_hatter.get_plugin().load_settings()
-    # Job ID for the scheduled task
-    job_id = f"scrapycat_scheduled_scraping:{cheshire_cat.agent_key}"
-
-    white_rabbit = WhiteRabbit()
 
     try:
         scheduled_command: str = settings.get("scheduled_command", "").strip()
@@ -44,6 +44,7 @@ def setup_scrapycat_schedule(cheshire_cat: CheshireCat) -> None:
             return
 
         # Check if the job is already scheduled
+        white_rabbit = WhiteRabbit()
         if white_rabbit.get_job(job_id):
             log.debug(f"Job '{job_id}' already scheduled for CheshireCat '{cheshire_cat.agent_key}'")
             return
@@ -69,4 +70,33 @@ def after_cat_bootstrap(cat: CheshireCat) -> None:
 
     # The cat parameter here is a CheshireCat
     crawl4ai_setup_command(settings)
-    setup_scrapycat_schedule(cat)
+    setup_scrapycat_schedule(cat, _get_job_id(cat))
+
+
+@hook(priority=0)
+def after_plugin_settings_update(plugin_id: str, settings: Dict[str, Any], cat: CheshireCat) -> None:
+    """Hook called when the plugin settings are updated"""
+    if plugin_id != cat.mad_hatter.get_plugin().id:
+        return
+
+    # Job ID for the scheduled task
+    job_id = _get_job_id(cat)
+    white_rabbit = WhiteRabbit()
+
+    while True:
+        job = white_rabbit.get_job(job_id)
+
+        # No job found, exit the loop
+        if not job:
+            break
+
+        # If the job is not running, remove it
+        if job.status != JobStatus.RUNNING:
+            white_rabbit.remove_job(job_id)
+            break
+
+        # If the job is running, wait and check again
+        log.debug(f"ScrapyCat scheduled job '{job_id}' is still running, waiting for it to finish...")
+        # Wait for a short period before checking again
+        import time
+        time.sleep(5)
