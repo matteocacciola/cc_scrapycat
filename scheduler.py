@@ -15,7 +15,7 @@ def _get_job_id(cat: CheshireCat) -> str:
 # IMPORTANT: This function MUST live at a module level (not inside another function) so that APScheduler + Redis can
 # pickle/serialize it by its fully qualified import path.
 # All runtime context is passed explicitly via kwargs.
-def scheduled_scrapycat_job(user_message: str, agent_key: str, scheduled_job_id: str) -> str:
+def _scheduled_scrapycat_job(user_message: str, agent_key: str, scheduled_job_id: str) -> str:
     """
     Module-level wrapper executed by APScheduler on its cron schedule.
 
@@ -44,7 +44,7 @@ def scheduled_scrapycat_job(user_message: str, agent_key: str, scheduled_job_id:
         white_rabbit.release_lock(scheduled_job_id)
 
 
-def setup_scrapycat_schedule(cheshire_cat: CheshireCat, job_id: str) -> None:
+def _setup_scrapycat_schedule(cheshire_cat: CheshireCat, job_id: str) -> None:
     """Setup or update the ScrapyCat scheduled cron job based on current settings."""
     settings = cheshire_cat.mad_hatter.get_plugin().load_settings()
 
@@ -66,7 +66,7 @@ def setup_scrapycat_schedule(cheshire_cat: CheshireCat, job_id: str) -> None:
             return
 
         lizard.white_rabbit.schedule_cron_job(
-            job=scheduled_scrapycat_job,
+            job=_scheduled_scrapycat_job,
             job_id=job_id,
             hour=schedule_hour,
             minute=schedule_minute,
@@ -80,6 +80,24 @@ def setup_scrapycat_schedule(cheshire_cat: CheshireCat, job_id: str) -> None:
         log.error(f"Failed to setup scheduled ScrapyCat job: {str(e)}")
 
 
+def _remove_scrapycat_schedule(job_id: str) -> None:
+    lizard = BillTheLizard()
+
+    # Wait for any currently-running execution to finish before replacing the job
+    while True:
+        job = lizard.white_rabbit.get_job(job_id)
+
+        if not job:
+            return  # No job exists, nothing to remove
+
+        if job.status != JobStatus.RUNNING:
+            lizard.white_rabbit.remove_job(job_id)
+            return
+
+        log.debug(f"ScrapyCat job '{job_id}' is still running, waiting before replacing...")
+        time.sleep(5)
+
+
 @hook(priority=9)
 def after_cat_bootstrap(cat: CheshireCat) -> None:
     """Hook called at Cat startup to schedule recurring jobs."""
@@ -88,7 +106,7 @@ def after_cat_bootstrap(cat: CheshireCat) -> None:
     settings: Dict[str, Any] = cat.mad_hatter.get_plugin().load_settings()
 
     crawl4ai_setup_command(settings)
-    setup_scrapycat_schedule(cat, _get_job_id(cat))
+    _setup_scrapycat_schedule(cat, _get_job_id(cat))
 
 
 @hook(priority=0)
@@ -98,21 +116,20 @@ def after_plugin_settings_update(plugin_id: str, settings: Dict[str, Any], cat: 
         return
 
     job_id = _get_job_id(cat)
-    lizard = BillTheLizard()
 
-    # Wait for any currently-running execution to finish before replacing the job
-    while True:
-        job = lizard.white_rabbit.get_job(job_id)
-
-        if not job:
-            break  # No job exists, nothing to remove
-
-        if job.status != JobStatus.RUNNING:
-            lizard.white_rabbit.remove_job(job_id)
-            break
-
-        log.debug(f"ScrapyCat job '{job_id}' is still running, waiting before replacing...")
-        time.sleep(5)
+    # Remove the existing job
+    _remove_scrapycat_schedule(job_id)
 
     # Schedule a fresh job with the updated settings
-    setup_scrapycat_schedule(cat, job_id)
+    _setup_scrapycat_schedule(cat, job_id)
+
+
+@hook(priority=0)
+def after_plugin_toggling_on_agent(plugin_id: str, cat: CheshireCat) -> None:
+    this_plugin = cat.mad_hatter.get_plugin()
+    lizard = BillTheLizard()
+    job_id = _get_job_id(cat)
+
+    active_plugins = cat.mad_hatter.active_plugins
+    if plugin_id == this_plugin.id and plugin_id not in active_plugins and lizard.white_rabbit.get_job(job_id):
+        _remove_scrapycat_schedule(job_id)
