@@ -83,7 +83,7 @@ def _setup_scrapycat_schedule(cheshire_cat: CheshireCat, job_id: str) -> None:
 def _remove_scrapycat_schedule(job_id: str) -> None:
     lizard = BillTheLizard()
 
-    # Wait for any currently-running execution to finish before replacing the job
+    # Wait for any currently running execution to finish before replacing the job
     while True:
         job = lizard.white_rabbit.get_job(job_id)
 
@@ -96,17 +96,6 @@ def _remove_scrapycat_schedule(job_id: str) -> None:
 
         log.debug(f"ScrapyCat job '{job_id}' is still running, waiting before replacing...")
         time.sleep(5)
-
-
-@hook(priority=9)
-def after_cat_bootstrap(cat: CheshireCat) -> None:
-    """Hook called at Cat startup to schedule recurring jobs."""
-    log.debug("Setting up ScrapyCat scheduled jobs after BillTheLizard bootstrap")
-
-    settings: Dict[str, Any] = cat.mad_hatter.get_plugin().load_settings()
-
-    crawl4ai_setup_command(settings)
-    _setup_scrapycat_schedule(cat, _get_job_id(cat))
 
 
 @hook(priority=0)
@@ -127,9 +116,20 @@ def after_plugin_settings_update(plugin_id: str, settings: Dict[str, Any], cat: 
 @hook(priority=0)
 def after_plugin_toggling_on_agent(plugin_id: str, cat: CheshireCat) -> None:
     this_plugin = cat.mad_hatter.get_plugin()
-    lizard = BillTheLizard()
+    if plugin_id != this_plugin.id:
+        return
+
     job_id = _get_job_id(cat)
 
-    active_plugins = cat.mad_hatter.active_plugins
-    if plugin_id == this_plugin.id and plugin_id not in active_plugins and lizard.white_rabbit.get_job(job_id):
+    if plugin_id in cat.mad_hatter.active_plugins:
+        log.debug(f"Setting up ScrapyCat scheduled jobs after plugin toggle on agent '{cat.agent_key}'")
+
+        settings: Dict[str, Any] = this_plugin.load_settings()
+
+        crawl4ai_setup_command(settings)
+        _setup_scrapycat_schedule(cat, job_id)
+        return
+
+    lizard = BillTheLizard()
+    if lizard.white_rabbit.get_job(job_id):
         _remove_scrapycat_schedule(job_id)

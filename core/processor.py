@@ -46,7 +46,7 @@ async def _crawl4i(url: str) -> str:
 
 async def _remove_old_vectors(metadata: Dict[str, Any], scraped_url: str, cat: BotMixin):
     metadata_to_find = {k: v for k, v in metadata.items() if v == scraped_url}
-    collection_name = str(VectorMemoryType.PROCEDURAL)
+    collection_name = str(VectorMemoryType.DECLARATIVE)
     if isinstance(cat, StrayCat):
         metadata_to_find["chat_id"] = cat.id
         collection_name = str(VectorMemoryType.EPISODIC)
