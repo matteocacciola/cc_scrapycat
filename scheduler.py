@@ -46,6 +46,8 @@ def _scheduled_scrapycat_job(user_message: str, agent_key: str, scheduled_job_id
 
 def _setup_scrapycat_schedule(cheshire_cat: CheshireCat, job_id: str) -> None:
     """Setup or update the ScrapyCat scheduled cron job based on current settings."""
+    log.info(f"ScrapyCat Setting up ScrapyCat scheduled jobs after plugin toggle on agent '{cheshire_cat.agent_key}'")
+
     settings = cheshire_cat.mad_hatter.get_plugin().load_settings()
 
     try:
@@ -81,6 +83,7 @@ def _setup_scrapycat_schedule(cheshire_cat: CheshireCat, job_id: str) -> None:
 
 
 def _remove_scrapycat_schedule(job_id: str) -> None:
+    log.info("ScrapyCat Plugin: removing scheduled job.")
     lizard = BillTheLizard()
 
     # Wait for any currently running execution to finish before replacing the job
@@ -122,14 +125,10 @@ def after_plugin_toggling_on_agent(plugin_id: str, cat: CheshireCat) -> None:
     job_id = _get_job_id(cat)
 
     if plugin_id in cat.mad_hatter.active_plugins:
-        log.debug(f"Setting up ScrapyCat scheduled jobs after plugin toggle on agent '{cat.agent_key}'")
-
         settings: Dict[str, Any] = this_plugin.load_settings()
 
         crawl4ai_setup_command(settings)
         _setup_scrapycat_schedule(cat, job_id)
         return
 
-    lizard = BillTheLizard()
-    if lizard.white_rabbit.get_job(job_id):
-        _remove_scrapycat_schedule(job_id)
+    _remove_scrapycat_schedule(job_id)
