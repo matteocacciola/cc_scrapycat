@@ -1,6 +1,6 @@
 # Description
 
-This plugin for the [Cheshire Cat Project](https://github.com/pieroit/cheshire-cat) allows you to scrape an entire website and ingest all pages and PDFs into Rabbithole. Image files are automatically skipped during the scraping process.
+This plugin for the [Grinning Cat Project](https://github.com/matteocacciola/grinning-cat-core) allows you to scrape an entire website and ingest all pages and PDFs into Rabbithole. Image files are automatically skipped during the scraping process.
 
 # Usage
 
