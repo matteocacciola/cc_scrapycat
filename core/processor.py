@@ -242,7 +242,7 @@ async def process_scrapycat_command(user_message: str, cat: BotMixin, scheduled:
 
                 # Send progress update
                 if not ctx.scheduled and isinstance(cat, StrayCat):
-                    await cat.notifier.send_ws_message(
+                    await cat.notifier.send_notification(
                         f"Ingested {ingested_count}/{len(ctx.scraped_pages)} pages - Currently processing: {scraped_url}"
                     )
             except Exception as e:
