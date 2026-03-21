@@ -129,7 +129,7 @@ async def _crawl_page(ctx: ScrapyCatContext, cat: BotMixin, page: str, depth: in
                         pass
 
                 if isinstance(cat, StrayCat):
-                    await cat.notifier.send_ws_message(f"Scraped {current_count} pages - {worker_name} scraping: {page}")
+                    await cat.notifier.send_notification(f"Scraped {current_count} pages - {worker_name} scraping: {page}")
         
         urls: List[str] = [link["href"] for link in soup.select("a[href]")]
         
@@ -234,7 +234,7 @@ def crawl4ai_setup_command(settings: Dict, cat: BotMixin | None = None) -> None:
         return
 
     if can_notify:
-        cat.notifier.send_ws_message("Running crawl4ai setup...")
+        cat.notifier.send_notification("Running crawl4ai setup...")
 
     # Setup crawl4ai dependencies and configuration
     try:
@@ -245,7 +245,7 @@ def crawl4ai_setup_command(settings: Dict, cat: BotMixin | None = None) -> None:
 
         message = "Crawl4AI setup completed successfully."
         if can_notify:
-            cat.notifier.send_ws_message(message)
+            cat.notifier.send_notification(message)
         log.info(message)
 
         Path.write_text(filepath, "")  # Create an empty .crawl4ai file to indicate setup is done
