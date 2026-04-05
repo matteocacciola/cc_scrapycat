@@ -8,7 +8,7 @@ import threading
 from bs4 import BeautifulSoup
 from cat import StrayCat
 from cat.log import log
-from cat.services.mixin import BotMixin
+from cat.mixins import BotMixin
 
 from .context import ScrapyCatContext
 from ..utils.url_utils import normalize_domain

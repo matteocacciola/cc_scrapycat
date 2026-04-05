@@ -1,4 +1,4 @@
-from typing import Dict, Set, List
+from typing import Dict, Set, List, Any
 from threading import Lock
 from urllib.robotparser import RobotFileParser
 import uuid
@@ -40,9 +40,9 @@ class ScrapyCatContext:
         self.ignored_pages: List[str] = []  # URLs that were scraped but ignored (e.g. unchanged content)
         
         # Custom fields added by hooks - allows plugins to extend context dynamically
-        self._custom_fields: Dict[str, any] = {}
+        self._custom_fields: Dict[str, Any] = {}
     
-    def to_hook_context(self) -> Dict[str, any]:
+    def to_hook_context(self) -> Dict[str, Any]:
         """Create a serializable context data dictionary for hook execution"""
         # Start with standard fields
         context = {
@@ -62,7 +62,7 @@ class ScrapyCatContext:
         context.update(self._custom_fields)
         return context
     
-    def update_from_hook_context(self, context_data: Dict[str, any]) -> None:
+    def update_from_hook_context(self, context_data: Dict[str, Any]) -> None:
         """Update context with data returned from hook execution"""
         # Known fields - explicitly update
         known_fields = {
@@ -93,6 +93,6 @@ class ScrapyCatContext:
         """Get a custom field value from the context"""
         return self._custom_fields.get(key, default)
     
-    def set_custom_field(self, key: str, value: any) -> None:
+    def set_custom_field(self, key: str, value: Any) -> None:
         """Set a custom field value in the context"""
         self._custom_fields[key] = value

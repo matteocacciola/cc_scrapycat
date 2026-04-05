@@ -1,8 +1,8 @@
 import tempfile
 from cat import StrayCat
 from cat.log import log
+from cat.mixins import BotMixin
 from cat.services.memory.models import VectorMemoryType
-from cat.services.mixin import BotMixin
 from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
 from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 from crawl4ai.processors.pdf import PDFCrawlerStrategy, PDFContentScrapingStrategy
@@ -51,12 +51,13 @@ async def _remove_old_vectors(metadata: Dict[str, Any], scraped_url: str, cat: B
         metadata_to_find["chat_id"] = cat.id
         collection_name = str(VectorMemoryType.EPISODIC)
 
-    await cat.vector_memory_handler.delete_tenant_points(collection_name, metadata=metadata_to_find)
+    vmh = await cat.vector_memory_handler()
+    await vmh.delete_tenant_points(collection_name, metadata=metadata_to_find)
 
 
 async def process_scrapycat_command(user_message: str, cat: BotMixin, scheduled: bool = False) -> str:
     """Process a scrapycat command and return the result message"""
-    settings: Dict[str, Any] = cat.mad_hatter.get_plugin().load_settings()
+    settings: Dict[str, Any] = await cat.mad_hatter.get_plugin().load_settings()
 
     # Parse command arguments
     parts: List[str] = user_message.split()
@@ -172,7 +173,7 @@ async def process_scrapycat_command(user_message: str, cat: BotMixin, scheduled:
     # Fire before_scraping hook with serializable context data
     try:
         context_data = ctx.to_hook_context()
-        context_data = cat.mad_hatter.execute_hook("scrapycat_before_scraping", context_data, caller=cat)
+        context_data = await cat.mad_hatter.execute_hook("scrapycat_before_scraping", context_data, caller=cat)
         ctx.update_from_hook_context(context_data)
     except Exception as hook_error:
         log.warning(f"Error executing before_scraping hook: {hook_error}")
@@ -194,7 +195,7 @@ async def process_scrapycat_command(user_message: str, cat: BotMixin, scheduled:
             log.debug(
                 f"Firing after_scraping hook with context data: session_id={context_data['session_id']}, command={context_data['command']}"
             )
-            context_data = cat.mad_hatter.execute_hook("scrapycat_after_scraping", context_data, caller=cat)
+            context_data = await cat.mad_hatter.execute_hook("scrapycat_after_scraping", context_data, caller=cat)
             ctx.update_from_hook_context(context_data)
         except Exception as hook_error:
             log.warning(f"Error executing after_scraping hook: {hook_error}")
@@ -269,7 +270,7 @@ async def process_scrapycat_command(user_message: str, cat: BotMixin, scheduled:
             context_data = ctx.to_hook_context()
             log.debug(
                 f"Firing after_ingestion hook with context data: session_id={context_data['session_id']}, command={context_data['command']}")
-            cat.mad_hatter.execute_hook("scrapycat_after_ingestion", context_data, caller=cat)
+            await cat.mad_hatter.execute_hook("scrapycat_after_ingestion", context_data, caller=cat)
             ctx.update_from_hook_context(context_data)
         except Exception as hook_error:
             log.warning(f"Error executing after_ingestion hook: {hook_error}")

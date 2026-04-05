@@ -1,7 +1,7 @@
 import time
 from typing import Dict, Any
 from cat.log import log
-from cat import hook, CheshireCat, run_sync_or_async, BillTheLizard
+from cat import hook, CheshireCat, BillTheLizard
 from cat.core_plugins.white_rabbit.white_rabbit import JobStatus
 
 from .core.crawler import crawl4ai_setup_command
@@ -15,40 +15,34 @@ def _get_job_id(cat: CheshireCat) -> str:
 # IMPORTANT: This function MUST live at a module level (not inside another function) so that APScheduler + Redis can
 # pickle/serialize it by its fully qualified import path.
 # All runtime context is passed explicitly via kwargs.
-def _scheduled_scrapycat_job(user_message: str, agent_key: str, scheduled_job_id: str) -> str:
+async def _scheduled_scrapycat_job(lizard, user_message: str, agent_key: str, scheduled_job_id: str) -> str:
     """
     Module-level wrapper executed by APScheduler on its cron schedule.
 
     Args:
+        lizard (BillTheLizard): The global instance of BillTheLizard.
         user_message (str): The scraping command to run.
         agent_key (str): Key used to retrieve the correct CheshireCat instance.
         scheduled_job_id (str): The job id, used for distributed locking.
     """
-    lizard = BillTheLizard()
-
     white_rabbit = lizard.white_rabbit
-    cheshire_cat = lizard.get_cheshire_cat(agent_key)
+    cheshire_cat = await lizard.get_cheshire_cat(agent_key)
 
     lock_acquired = white_rabbit.acquire_lock(scheduled_job_id)
     if not lock_acquired:
         return "Skip execution"  # Skip execution if the lock is not acquired (previous job still running)
 
     try:
-        return run_sync_or_async(
-            process_scrapycat_command,
-            user_message=user_message,
-            cat=cheshire_cat,
-            scheduled=True,
-        )
+        return await process_scrapycat_command(user_message=user_message, cat=cheshire_cat, scheduled=True)
     finally:
         white_rabbit.release_lock(scheduled_job_id)
 
 
-def _setup_scrapycat_schedule(cheshire_cat: CheshireCat, job_id: str) -> None:
+async def _setup_scrapycat_schedule(cheshire_cat: CheshireCat, job_id: str) -> None:
     """Setup or update the ScrapyCat scheduled cron job based on current settings."""
     log.info(f"ScrapyCat Setting up ScrapyCat scheduled jobs after plugin toggle on agent '{cheshire_cat.agent_key}'")
 
-    settings = cheshire_cat.mad_hatter.get_plugin().load_settings()
+    settings = await cheshire_cat.mad_hatter.get_plugin().load_settings()
 
     try:
         scheduled_command: str = settings.get("scheduled_command", "").strip()
@@ -60,7 +54,7 @@ def _setup_scrapycat_schedule(cheshire_cat: CheshireCat, job_id: str) -> None:
             log.debug("No scheduled ScrapyCat command configured, skipping job setup")
             return
 
-        lizard = BillTheLizard()
+        lizard = cheshire_cat.lizard
 
         # Avoid adding the same job twice
         if lizard.white_rabbit.get_job(job_id):
@@ -72,6 +66,7 @@ def _setup_scrapycat_schedule(cheshire_cat: CheshireCat, job_id: str) -> None:
             job_id=job_id,
             hour=schedule_hour,
             minute=schedule_minute,
+            lizard=lizard,
             user_message=scheduled_command,
             agent_key=cheshire_cat.agent_key,
             scheduled_job_id=job_id,
@@ -102,7 +97,7 @@ def _remove_scrapycat_schedule(job_id: str) -> None:
 
 
 @hook(priority=0)
-def after_plugin_settings_update(plugin_id: str, settings: Dict[str, Any], cat: CheshireCat) -> None:
+async def after_plugin_settings_update(plugin_id: str, settings: Dict[str, Any], cat: CheshireCat) -> None:
     """Hook called when plugin settings are updated — replaces the cron job with the new config."""
     if plugin_id != cat.mad_hatter.get_plugin().id:
         return
@@ -113,11 +108,11 @@ def after_plugin_settings_update(plugin_id: str, settings: Dict[str, Any], cat: 
     _remove_scrapycat_schedule(job_id)
 
     # Schedule a fresh job with the updated settings
-    _setup_scrapycat_schedule(cat, job_id)
+    await _setup_scrapycat_schedule(cat, job_id)
 
 
 @hook(priority=0)
-def after_plugin_toggling_on_agent(plugin_id: str, cat: CheshireCat) -> None:
+async def after_plugin_toggling_on_agent(plugin_id: str, cat: CheshireCat) -> None:
     this_plugin = cat.mad_hatter.get_plugin()
     if plugin_id != this_plugin.id:
         return
@@ -125,10 +120,10 @@ def after_plugin_toggling_on_agent(plugin_id: str, cat: CheshireCat) -> None:
     job_id = _get_job_id(cat)
 
     if plugin_id in cat.mad_hatter.active_plugins:
-        settings: Dict[str, Any] = this_plugin.load_settings()
+        settings: Dict[str, Any] = await this_plugin.load_settings()
 
         crawl4ai_setup_command(settings)
-        _setup_scrapycat_schedule(cat, job_id)
+        await _setup_scrapycat_schedule(cat, job_id)
         return
 
     _remove_scrapycat_schedule(job_id)

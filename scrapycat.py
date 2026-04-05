@@ -6,14 +6,14 @@ from .core.processor import process_scrapycat_command
 
 
 @hook(priority=9)
-def lizard_notify_plugin_installation(plugin_id: str, plugin_path: str, lizard: BillTheLizard):
-    settings = lizard.mad_hatter.get_plugin().load_settings()
+async def lizard_notify_plugin_installation(plugin_id: str, plugin_path: str, lizard: BillTheLizard):
+    settings = await lizard.mad_hatter.get_plugin().load_settings()
     crawl4ai_setup_command(settings)
 
 
 @hook(priority=9)
-def after_lizard_bootstrap(lizard: BillTheLizard):
-    settings = lizard.mad_hatter.get_plugin().load_settings()
+async def after_lizard_bootstrap(lizard: BillTheLizard):
+    settings = await lizard.mad_hatter.get_plugin().load_settings()
     crawl4ai_setup_command(settings)
 
 
@@ -25,7 +25,7 @@ async def agent_fast_reply(cat: StrayCat) -> AgenticWorkflowOutput | None:
         return None
 
     # Check if only scheduled scraping is enabled
-    settings: Dict[str, Any] = cat.mad_hatter.get_plugin().load_settings()
+    settings: Dict[str, Any] =await cat.mad_hatter.get_plugin().load_settings()
     if settings.get("only_scheduled", False):
         # Skip processing and let the chatbot handle it normally
         return None
